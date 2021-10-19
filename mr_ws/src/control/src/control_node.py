@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 
 import rospy
-from geometry_msgs import Twist, Vector3, PoseWithCovarianceStamped, PoseWithCovariance, Pose
-from apriltag_ros import AprilTagDetectionArray
+from geometry_msgs.msg import Twist
+from apriltag_ros.msg import AprilTagDetectionArray
 import numpy as np
 from scipy.linalg import expm, logm
 
@@ -10,26 +10,29 @@ control_pub = None
 # constants
 r = 0.033 # wheel radius
 w = 0.16 # chassis width
+# goal pose
+goal_pose = None
 
 def timer_callback(event):
     # publish velocity cmds to follow the trajectory,
     # and halt when it arrives at the target pose.
-    lin = Vector3()
-    lin.x = 0.2 #dx
-    ang = Vector3()
-    ang.z = 0.1333 #dtheta
+    pass
+
+def drive_in_circle():
     cmd = Twist()
-    cmd.linear = lin
-    cmd.angular = ang
+    cmd.linear.x = 0.2 #dx
+    cmd.angular.z = 0.1333 #dtheta
     control_pub.publish(cmd)
 
 def tag_detect(tag):
+    global goal_pose
     # get a pose from the detected tag
-    pose_msg = tag.detections.pose.pose.pose
-    position = [pose_msg.position.x,pose_msg.position.y,pose_msg.position.z]
-    orientation = pose_msg.orientation #x,y,z,w
-    # calculate a trajectory to drive to the pose
-    #TODO
+    goal_pose = tag.detections[0].pose.pose.pose
+    #position = [pose_msg.position.x,pose_msg.position.y,pose_msg.position.z]
+    #orientation = pose_msg.orientation #x,y,z,w
+
+def calculate_trajectory(goal_pose):
+    # calculate a trajectory to drive to the goal pose
     pass
 
 
