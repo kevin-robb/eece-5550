@@ -8,7 +8,7 @@ The gazebo simulation can be launched with
 or
 `roslaunch turtlebot3_mr turtlebot3_lab2.launch`
 
-The sensor visualization tool Rviz can be opened with
+The sensor visualization tool Rviz can be opened by first changing to the `turtlebot3_mr` directory and then running 
 `rosrun rviz rviz -d config/rviz.rviz`
 
 We can run `roslaunch turtlebot3_mr apriltag_gazebo.launch` to publish the marker's pose to the `/tf` topic.
