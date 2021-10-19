@@ -182,6 +182,3 @@ qtcreator-*
 # Catkin custom files
 CATKIN_IGNORE
 
-# turtlebot3 simulator, cloned repo
-mr_ws/src/turtlebot3_simulations/
-mr_ws/src/turtlebot3_mr
