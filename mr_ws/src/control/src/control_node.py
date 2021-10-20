@@ -5,7 +5,7 @@ from geometry_msgs.msg import Twist
 from nav_msgs.msg import Odometry
 from apriltag_ros.msg import AprilTagDetectionArray
 import numpy as np
-from scipy.linalg import expm, logm
+from scipy.linalg import expm, logm, inv
 from math import sin, cos, acos
 from tf.transformations import euler_from_quaternion
 
@@ -29,13 +29,19 @@ def get_robot_position(msg):
     cur_pose = make_affine(msg.pose.pose)
 
 # get a pose from the detected tag
-def tag_detect(tag):
+def tag_detect(tag_msg):
     global goal_pose
-    goal_pose = make_affine(tag.detections[0].pose.pose.pose)
+    tag_pose = tag_msg.detections[0].pose.pose.pose
+    # calculate goal pose:
+    #  - 12cm in front of the tag (+z)
+    #  - robot x-axis directly facing it (anti-parallel with its z-axis)
+    # transform to robot's coordinate frame?
+    # TODO make goal pose
+
     
-# create a homogenous affine matrix from a pose msg
-def make_affine(pose):
-    # extract yaw from quaternion in pose
+
+# extract yaw from quaternion in pose
+def yaw_from_pose(pose):
     quaternion = (
         pose.orientation.x,
         pose.orientation.y,
@@ -43,16 +49,35 @@ def make_affine(pose):
         pose.orientation.w)
     theta = euler_from_quaternion(quaternion)[2] # (roll,pitch,yaw)
     #theta = 2*acos(pose.orientation.w)
-    return np.array([[cos(theta), -sin(theta), pose.position.x], [sin(theta), cos(theta), pose.position.y], [0,0,1]])
+    return theta
+
+# create a homogenous affine matrix from a pose msg
+def make_affine(pose):
+    return make_affine(yaw_from_pose(pose), pose.position.x, pose.position.y)
+
+def make_affine(theta,x,y):
+    # return np.array([[cos(theta), -sin(theta), pose.position.x], [sin(theta), cos(theta), pose.position.y], [0,0,1]])
+    return ([cos(theta), -sin(theta), x], [sin(theta), cos(theta), y], [0,0,1])
 
 # calculate a trajectory to drive to the goal pose
 def calculate_trajectory(goal_pose):
-    #TODO
-    pass
+    # calculate \dot\Omega
+    dotOmega = logm(inv(cur_pose) @ goal_pose)
+    # extract necessary speed commands
+    cmd = Twist()
+    cmd.linear.x = dotOmega[0][2]
+    cmd.angular.z = dotOmega[0][1]
+    control_pub.publish(cmd)
+    # dotPhi_r = dotOmega[0][2] / r - dotOmega[0][1] * w/(2*r)
+    # dotPhi_l = dotOmega[0][2] / r + dotOmega[0][1] * w/(2*r)
+    # # calculate Twist parameters from these
+    # dx = (dotPhi_r + dotPhi_l)/2
+    # dtheta = (dotPhi_r - dotPhi_l)
 
 # action on every timestep
 def timer_callback(event):
     # publish velocity cmds to follow the trajectory,
+    calculate_trajectory(goal_pose)
     # and halt when it arrives at the target pose.
     pass
 
