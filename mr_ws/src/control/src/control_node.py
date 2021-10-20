@@ -6,18 +6,19 @@ from nav_msgs.msg import Odometry
 from apriltag_ros.msg import AprilTagDetectionArray
 import numpy as np
 from scipy.linalg import expm, logm, inv
-from math import sin, cos, acos
+from math import sin, cos
 from tf.transformations import euler_from_quaternion
 
 control_pub = None
-# constants
-r = 0.033 # wheel radius
-w = 0.16 # chassis width
-T = 5 # total time to reach goal pose
-# poses as homogenous matrices
+# Constants:
+r = 0.033 # wheel radius (m)
+w = 0.16 # chassis width (m)
+T = 5 # total time to reach goal pose (s)
+# Poses as homogenous matrices:
 cur_pose = None
 goal_pose = None
 
+# drive in 1.5m radius circle, as in lab 2, problem 2
 def drive_in_circle():
     cmd = Twist()
     cmd.linear.x = 0.2 #dx
@@ -51,7 +52,6 @@ def yaw_from_pose(pose):
         pose.orientation.z,
         pose.orientation.w)
     theta = euler_from_quaternion(quaternion)[2] # (roll,pitch,yaw)
-    #theta = 2*acos(pose.orientation.w)
     return theta
 
 # create a homogenous affine matrix from a pose msg
@@ -60,10 +60,6 @@ def make_affine(pose=None,theta=None,x=None,y=None):
         return ([cos(theta), -sin(theta), x], [sin(theta), cos(theta), y], [0,0,1])
     else:
         return make_affine(theta=yaw_from_pose(pose), x=pose.position.x, y=pose.position.y)
-
-# def make_affine(theta,x,y):
-#     # return np.array([[cos(theta), -sin(theta), pose.position.x], [sin(theta), cos(theta), pose.position.y], [0,0,1]])
-#     return ([cos(theta), -sin(theta), x], [sin(theta), cos(theta), y], [0,0,1])
 
 # calculate a trajectory to drive to the goal pose
 def calculate_trajectory(goal_pose):
