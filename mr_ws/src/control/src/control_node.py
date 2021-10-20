@@ -13,6 +13,7 @@ control_pub = None
 # constants
 r = 0.033 # wheel radius
 w = 0.16 # chassis width
+T = 5 # total time to reach goal pose
 # poses as homogenous matrices
 cur_pose = None
 goal_pose = None
@@ -26,19 +27,21 @@ def drive_in_circle():
 # get robot's current pose from Odom
 def get_robot_position(msg):
     global cur_pose
-    cur_pose = make_affine(msg.pose.pose)
+    cur_pose = make_affine(pose=msg.pose.pose)
 
 # get a pose from the detected tag
 def tag_detect(tag_msg):
     global goal_pose
-    tag_pose = tag_msg.detections[0].pose.pose.pose
-    # calculate goal pose:
-    #  - 12cm in front of the tag (+z)
-    #  - robot x-axis directly facing it (anti-parallel with its z-axis)
-    # transform to robot's coordinate frame?
-    # TODO make goal pose
-
-    
+    try:
+        tag_pose = tag_msg.detections[0].pose.pose.pose
+        # calculate goal pose:
+        #  - 12cm in front of the tag (+z)
+        #  - robot x-axis directly facing it (anti-parallel with its z-axis)
+        # transform to robot's coordinate frame?
+        # TODO make goal pose
+    except:
+        # no tag detected
+        return
 
 # extract yaw from quaternion in pose
 def yaw_from_pose(pose):
@@ -52,34 +55,41 @@ def yaw_from_pose(pose):
     return theta
 
 # create a homogenous affine matrix from a pose msg
-def make_affine(pose):
-    return make_affine(yaw_from_pose(pose), pose.position.x, pose.position.y)
+def make_affine(pose=None,theta=None,x=None,y=None):
+    if pose is None:
+        return ([cos(theta), -sin(theta), x], [sin(theta), cos(theta), y], [0,0,1])
+    else:
+        return make_affine(theta=yaw_from_pose(pose), x=pose.position.x, y=pose.position.y)
 
-def make_affine(theta,x,y):
-    # return np.array([[cos(theta), -sin(theta), pose.position.x], [sin(theta), cos(theta), pose.position.y], [0,0,1]])
-    return ([cos(theta), -sin(theta), x], [sin(theta), cos(theta), y], [0,0,1])
+# def make_affine(theta,x,y):
+#     # return np.array([[cos(theta), -sin(theta), pose.position.x], [sin(theta), cos(theta), pose.position.y], [0,0,1]])
+#     return ([cos(theta), -sin(theta), x], [sin(theta), cos(theta), y], [0,0,1])
 
 # calculate a trajectory to drive to the goal pose
 def calculate_trajectory(goal_pose):
-    # calculate \dot\Omega
-    dotOmega = logm(inv(cur_pose) @ goal_pose)
+    # calculate \dot\Omega using inverse kinematics
+    dotOmega = logm(inv(cur_pose) @ goal_pose) / T
     # extract necessary speed commands
     cmd = Twist()
     cmd.linear.x = dotOmega[0][2]
     cmd.angular.z = dotOmega[0][1]
     control_pub.publish(cmd)
-    # dotPhi_r = dotOmega[0][2] / r - dotOmega[0][1] * w/(2*r)
-    # dotPhi_l = dotOmega[0][2] / r + dotOmega[0][1] * w/(2*r)
-    # # calculate Twist parameters from these
-    # dx = (dotPhi_r + dotPhi_l)/2
-    # dtheta = (dotPhi_r - dotPhi_l)
 
 # action on every timestep
 def timer_callback(event):
-    # publish velocity cmds to follow the trajectory,
-    calculate_trajectory(goal_pose)
-    # and halt when it arrives at the target pose.
-    pass
+    # NOTE temp goal pose to see if trajectory gen is working
+    theta = 3.14 * 3/2
+    x = 5.5
+    y = 2.5
+    goal_pose = ([cos(theta), -sin(theta), x], [sin(theta), cos(theta), y], [0,0,1])
+    # check how close we are to the desired pose
+    if True: #TODO
+        # publish velocity cmds to follow the trajectory,
+        calculate_trajectory(goal_pose)
+    else:
+        # halt when it arrives at the target pose.
+        cmd = Twist() # send blank command of zeros
+        control_pub.publish(cmd)
 
 
 def main():
