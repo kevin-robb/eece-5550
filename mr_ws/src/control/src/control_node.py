@@ -1,12 +1,11 @@
 #!/usr/bin/env python
 
-from numpy.core.defchararray import _to_string_or_unicode_array
 import rospy
 from geometry_msgs.msg import Twist
 from nav_msgs.msg import Odometry
 from apriltag_ros.msg import AprilTagDetectionArray
 import numpy as np
-from scipy.linalg import expm, logm, inv
+from scipy.linalg import logm, inv
 from math import sin, cos, acos
 from tf.transformations import euler_from_quaternion
 
@@ -51,6 +50,16 @@ def tag_detect(tag_msg):
         # tag not detected, keep using last measurement
         return
 
+# set arrived flag to true when we're approximately at the goal pose
+def check_arrived() -> bool:
+    global arrived
+    x_close = abs(cur_pose[0][2]-goal_pose[0][2]) < 0.05
+    y_close = abs(cur_pose[1][2]-goal_pose[1][2]) < 0.05
+    theta_close = abs(acos(cur_pose[0][0])-acos(goal_pose[0][0])) < 0.05
+    if x_close and y_close and theta_close:
+        # don't allow it to get set to False again
+        arrived = True
+
 # extract yaw from quaternion in pose
 def yaw_from_pose(pose):
     quaternion = (
@@ -61,7 +70,7 @@ def yaw_from_pose(pose):
     theta = euler_from_quaternion(quaternion)[2] # (roll,pitch,yaw)
     return theta
 
-# create a homogenous affine matrix from a pose msg
+# create a homogenous affine matrix from a pose msg or components
 def make_affine(pose=None,theta=None,x=None,y=None):
     if pose is None:
         return np.array([[cos(theta), -sin(theta), x], [sin(theta), cos(theta), y], [0,0,1]])
@@ -90,23 +99,9 @@ def timer_callback(event):
         cmd = Twist() # send blank command of zeros
         control_pub.publish(cmd)
 
-# set arrived flag to true when we're approximately at the goal pose
-def check_arrived() -> bool:
-    global arrived
-    x_close = abs(cur_pose[0][2]-goal_pose[0][2]) < 0.05
-    y_close = abs(cur_pose[1][2]-goal_pose[1][2]) < 0.05
-    theta_close = abs(acos(cur_pose[0][0])-acos(goal_pose[0][0])) < 0.05
-    if x_close and y_close and theta_close:
-        # don't allow it to get set to False again
-        arrived = True
-
-
 def main():
     global control_pub, cur_pose
     rospy.init_node('control_node')
-    # set current pose to identity
-    # cur_pose = make_affine(theta=0,x=0,y=0)
-
     # publish the command messages
     control_pub = rospy.Publisher("/cmd_vel", Twist, queue_size=1)
     # subscribers
@@ -116,7 +111,6 @@ def main():
     rospy.Timer(rospy.Duration(0.1), timer_callback)
     # pump callbacks
     rospy.spin()
-
 
 if __name__ == '__main__':
     try:
