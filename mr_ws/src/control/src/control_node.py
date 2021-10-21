@@ -1,12 +1,13 @@
 #!/usr/bin/env python
 
+from numpy.core.defchararray import _to_string_or_unicode_array
 import rospy
 from geometry_msgs.msg import Twist
 from nav_msgs.msg import Odometry
 from apriltag_ros.msg import AprilTagDetectionArray
 import numpy as np
 from scipy.linalg import expm, logm, inv
-from math import sin, cos
+from math import sin, cos, acos
 from tf.transformations import euler_from_quaternion
 
 control_pub = None
@@ -17,6 +18,8 @@ T = 3 # total time to reach goal pose (s)
 # Poses as homogenous matrices:
 cur_pose = None
 goal_pose = None
+# Flags:
+arrived = False
 
 # drive in 1.5m radius circle, as in lab 2, problem 2
 def drive_in_circle():
@@ -78,13 +81,24 @@ def calculate_trajectory(goal_pose):
 # action on every timestep
 def timer_callback(event):
     # check how close we are to the desired pose
-    if True: #TODO
+    check_arrived()
+    if not arrived:
         # publish velocity cmds to follow the trajectory,
         calculate_trajectory(goal_pose)
     else:
         # halt when it arrives at the target pose.
         cmd = Twist() # send blank command of zeros
         control_pub.publish(cmd)
+
+# set arrived flag to true when we're approximately at the goal pose
+def check_arrived() -> bool:
+    global arrived
+    x_close = abs(cur_pose[0][2]-goal_pose[0][2]) < 0.05
+    y_close = abs(cur_pose[1][2]-goal_pose[1][2]) < 0.05
+    theta_close = abs(acos(cur_pose[0][0])-acos(goal_pose[0][0])) < 0.05
+    if x_close and y_close and theta_close:
+        # don't allow it to get set to False again
+        arrived = True
 
 
 def main():
