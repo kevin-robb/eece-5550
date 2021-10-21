@@ -13,7 +13,7 @@ control_pub = None
 # Constants:
 r = 0.033 # wheel radius (m)
 w = 0.16 # chassis width (m)
-T = 5 # total time to reach goal pose (s)
+T = 3 # total time to reach goal pose (s)
 # Poses as homogenous matrices:
 cur_pose = None
 goal_pose = None
@@ -33,15 +33,19 @@ def get_robot_position(msg):
 # get a pose from the detected tag
 def tag_detect(tag_msg):
     global goal_pose
+    if goal_pose is not None:
+        # only get it once
+        return
     try:
         tag_pose = tag_msg.detections[0].pose.pose.pose
         # calculate goal pose:
         #  - 12cm in front of the tag (+z)
         #  - robot x-axis directly facing it (anti-parallel with its z-axis)
-        # transform to robot's coordinate frame?
-        # TODO make goal pose
+        # transform to robot's coordinate frame
+        #  - tag's z position corresponds to distance between them (robot x)
+        goal_pose = make_affine(theta=0,x=tag_pose.position.z-0.12,y=0)
     except:
-        # no tag detected
+        # tag not detected, keep using last measurement
         return
 
 # extract yaw from quaternion in pose
@@ -57,7 +61,7 @@ def yaw_from_pose(pose):
 # create a homogenous affine matrix from a pose msg
 def make_affine(pose=None,theta=None,x=None,y=None):
     if pose is None:
-        return ([cos(theta), -sin(theta), x], [sin(theta), cos(theta), y], [0,0,1])
+        return np.array([[cos(theta), -sin(theta), x], [sin(theta), cos(theta), y], [0,0,1]])
     else:
         return make_affine(theta=yaw_from_pose(pose), x=pose.position.x, y=pose.position.y)
 
@@ -73,11 +77,6 @@ def calculate_trajectory(goal_pose):
 
 # action on every timestep
 def timer_callback(event):
-    # NOTE temp goal pose to see if trajectory gen is working
-    theta = 3.14 * 3/2
-    x = 5.5
-    y = 2.5
-    goal_pose = ([cos(theta), -sin(theta), x], [sin(theta), cos(theta), y], [0,0,1])
     # check how close we are to the desired pose
     if True: #TODO
         # publish velocity cmds to follow the trajectory,
@@ -89,8 +88,11 @@ def timer_callback(event):
 
 
 def main():
-    global control_pub
+    global control_pub, cur_pose
     rospy.init_node('control_node')
+    # set current pose to identity
+    # cur_pose = make_affine(theta=0,x=0,y=0)
+
     # publish the command messages
     control_pub = rospy.Publisher("/cmd_vel", Twist, queue_size=1)
     # subscribers
