@@ -8,29 +8,17 @@ import numpy as np
 from scipy.linalg import logm, inv
 from math import sin, cos, acos
 from tf.transformations import euler_from_quaternion
+from time import time, sleep
 
 control_pub = None
 # Constants:
 r = 0.033 # wheel radius (m)
 w = 0.16 # chassis width (m)
-T = 3 # total time to reach goal pose (s)
 # Poses as homogenous matrices:
-cur_pose = None
+cur_pose = np.array([[1,0,0],[0,1,0],[0,0,1]])
 goal_pose = None
 # Flags:
 arrived = False
-
-# drive in 1.5m radius circle, as in lab 2, problem 2
-def drive_in_circle():
-    cmd = Twist()
-    cmd.linear.x = 0.2 #dx
-    cmd.angular.z = 0.1333 #dtheta
-    control_pub.publish(cmd)
-
-# get robot's current pose from Odom
-def get_robot_position(msg):
-    global cur_pose
-    cur_pose = make_affine(pose=msg.pose.pose)
 
 # get a pose from the detected tag
 def tag_detect(tag_msg):
@@ -46,19 +34,12 @@ def tag_detect(tag_msg):
         # transform to robot's coordinate frame
         #  - tag's z position corresponds to distance between them (robot x)
         goal_pose = make_affine(theta=0,x=tag_pose.position.z-0.12,y=0)
-    except:
-        # tag not detected, keep using last measurement
-        return
 
-# set arrived flag to true when we're approximately at the goal pose
-def check_arrived() -> bool:
-    global arrived
-    x_close = abs(cur_pose[0][2]-goal_pose[0][2]) < 0.05
-    y_close = abs(cur_pose[1][2]-goal_pose[1][2]) < 0.05
-    theta_close = abs(acos(cur_pose[0][0])-acos(goal_pose[0][0])) < 0.05
-    if x_close and y_close and theta_close:
-        # don't allow it to get set to False again
-        arrived = True
+        # now that we have the goal pose, go to it
+        go_to_goal(goal_pose,4)
+    except:
+        # tag not detected
+        return
 
 # extract yaw from quaternion in pose
 def yaw_from_pose(pose):
@@ -78,26 +59,24 @@ def make_affine(pose=None,theta=None,x=None,y=None):
         return make_affine(theta=yaw_from_pose(pose), x=pose.position.x, y=pose.position.y)
 
 # calculate a trajectory to drive to the goal pose
-def calculate_trajectory(goal_pose):
+def calculate_trajectory(goal_pose, T):
     # calculate \dot\Omega using inverse kinematics
-    dotOmega = logm(inv(cur_pose) @ goal_pose) / T
+    dotOmega = logm(inv(cur_pose) @ goal_pose) / (T/2)
     # extract necessary speed commands
     cmd = Twist()
     cmd.linear.x = dotOmega[0][2]
     cmd.angular.z = dotOmega[0][1]
     control_pub.publish(cmd)
 
-# action on every timestep
-def timer_callback(event):
-    # check how close we are to the desired pose
-    check_arrived()
-    if not arrived:
-        # publish velocity cmds to follow the trajectory,
-        calculate_trajectory(goal_pose)
-    else:
-        # halt when it arrives at the target pose.
-        cmd = Twist() # send blank command of zeros
-        control_pub.publish(cmd)
+# drive to the goal pose for a certain amount of time, then halt
+def go_to_goal(goal_pose, T):
+    start_time = time()
+    calculate_trajectory(goal_pose, T)
+    while (time()-start_time < T):
+        sleep(0.05)
+    cmd = Twist() # send blank command of zeros
+    control_pub.publish(cmd)
+
 
 def main():
     global control_pub, cur_pose
@@ -105,10 +84,7 @@ def main():
     # publish the command messages
     control_pub = rospy.Publisher("/cmd_vel", Twist, queue_size=1)
     # subscribers
-    rospy.Subscriber('/odom', Odometry, get_robot_position, queue_size=1)
     rospy.Subscriber("/tag_detections",AprilTagDetectionArray,tag_detect,queue_size=1)
-    # init a 10Hz timer to call timer_callback()
-    rospy.Timer(rospy.Duration(0.1), timer_callback)
     # pump callbacks
     rospy.spin()
 
