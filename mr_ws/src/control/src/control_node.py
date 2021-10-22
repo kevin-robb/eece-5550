@@ -2,12 +2,10 @@
 
 import rospy
 from geometry_msgs.msg import Twist
-from nav_msgs.msg import Odometry
 from apriltag_ros.msg import AprilTagDetectionArray
 import numpy as np
 from scipy.linalg import logm, inv
-from math import sin, cos, acos
-from tf.transformations import euler_from_quaternion
+from math import sin, cos, acos, asin, atan2
 from time import time, sleep
 
 control_pub = None
@@ -30,12 +28,13 @@ def tag_detect(tag_msg):
     try:
         tag_pose = tag_msg.detections[0].pose.pose.pose
         print(tag_pose)
-        # calculate goal pose:
-        #  - 12cm in front of the tag (+z)
-        #  - robot x-axis directly facing it (anti-parallel with its z-axis)
-        # transform to robot's coordinate frame
-        #  - tag's z position corresponds to distance between them (robot x)
-        goal_pose = make_affine(theta=acos(tag_pose.orientation.w),x=tag_pose.position.z-0.12,y=0)
+        # use this to make goal pose in robot base frame
+        q0 = tag_pose.orientation.w
+        q1 = tag_pose.orientation.x
+        q2 = tag_pose.orientation.y
+        q3 = tag_pose.orientation.z
+        theta = asin(2*(q0*q2-q3*q1)) # equivalent of yaw in robot base frame
+        goal_pose = np.array([[cos(theta), -sin(theta), tag_pose.position.z-tag_to_goal+base_to_cam], [sin(theta), cos(theta), tag_pose.position.y], [0,0,1]])
         print(goal_pose)
 
         # now that we have the goal pose, go to it
@@ -43,23 +42,6 @@ def tag_detect(tag_msg):
     except:
         # tag not detected
         return
-
-# extract yaw from quaternion in pose
-def yaw_from_pose(pose):
-    quaternion = (
-        pose.orientation.x,
-        pose.orientation.y,
-        pose.orientation.z,
-        pose.orientation.w)
-    theta = euler_from_quaternion(quaternion)[2] # (roll,pitch,yaw)
-    return theta
-
-# create a homogenous affine matrix from a pose msg or components
-def make_affine(pose=None,theta=None,x=None,y=None):
-    if pose is None:
-        return np.array([[cos(theta), -sin(theta), x], [sin(theta), cos(theta), y], [0,0,1]])
-    else:
-        return make_affine(theta=yaw_from_pose(pose), x=pose.position.x, y=pose.position.y)
 
 # calculate a trajectory to drive to the goal pose
 def calculate_trajectory(goal_pose, T):
@@ -73,6 +55,7 @@ def calculate_trajectory(goal_pose, T):
 
 # drive to the goal pose for a certain amount of time, then halt
 def go_to_goal(goal_pose, T):
+    print("goal pose:\n",goal_pose)
     start_time = time()
     calculate_trajectory(goal_pose, T)
     while (time()-start_time < T):
