@@ -17,8 +17,6 @@ w = 0.16 # chassis width (m)
 # Poses as homogenous matrices:
 cur_pose = np.array([[1,0,0],[0,1,0],[0,0,1]])
 goal_pose = None
-# Flags:
-arrived = False
 
 # get a pose from the detected tag
 def tag_detect(tag_msg):
@@ -28,15 +26,17 @@ def tag_detect(tag_msg):
         return
     try:
         tag_pose = tag_msg.detections[0].pose.pose.pose
+        print(tag_pose)
         # calculate goal pose:
         #  - 12cm in front of the tag (+z)
         #  - robot x-axis directly facing it (anti-parallel with its z-axis)
         # transform to robot's coordinate frame
         #  - tag's z position corresponds to distance between them (robot x)
         goal_pose = make_affine(theta=0,x=tag_pose.position.z-0.12,y=0)
+        print(goal_pose)
 
         # now that we have the goal pose, go to it
-        go_to_goal(goal_pose,4)
+        go_to_goal(goal_pose,15)
     except:
         # tag not detected
         return
@@ -61,11 +61,11 @@ def make_affine(pose=None,theta=None,x=None,y=None):
 # calculate a trajectory to drive to the goal pose
 def calculate_trajectory(goal_pose, T):
     # calculate \dot\Omega using inverse kinematics
-    dotOmega = logm(inv(cur_pose) @ goal_pose) / (T/2)
+    dotOmega = logm(inv(cur_pose) @ goal_pose) / T
     # extract necessary speed commands
     cmd = Twist()
     cmd.linear.x = dotOmega[0][2]
-    cmd.angular.z = dotOmega[0][1]
+    cmd.angular.z = dotOmega[1][0]
     control_pub.publish(cmd)
 
 # drive to the goal pose for a certain amount of time, then halt
@@ -79,7 +79,7 @@ def go_to_goal(goal_pose, T):
 
 
 def main():
-    global control_pub, cur_pose
+    global control_pub
     rospy.init_node('control_node')
     # publish the command messages
     control_pub = rospy.Publisher("/cmd_vel", Twist, queue_size=1)
