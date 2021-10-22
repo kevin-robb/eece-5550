@@ -18,41 +18,46 @@ goal_pose = None
 
 # get a pose from the detected tag
 def tag_detect(tag_msg):
-    global goal_pose
-    if goal_pose is not None:
-        # only get it once
-        return
     try:
         tag_pose = tag_msg.detections[0].pose.pose.pose
-        # transform to robot's coordinate frame & calculate goal pose
-        #  - tag's z position corresponds to distance between them (robot x)
-        #  - want to be 12cm in front of the tag, directly facing it
-        goal_pose = make_affine(theta=0,x=tag_pose.position.z-0.12,y=0)
-
-        # now that we have the goal pose, go to it
-        go_to_goal(goal_pose,5)
+        calculate_goal_pose(tag_pose)
     except:
-        # tag not detected
+        # tag not detected, so need to rely on time to stop
+        go_to_goal(5)
         return
 
-# extract yaw from quaternion in pose
-def yaw_from_pose(pose):
-    quaternion = (
-        pose.orientation.x,
-        pose.orientation.y,
-        pose.orientation.z,
-        pose.orientation.w)
-    theta = euler_from_quaternion(quaternion)[2] # (roll,pitch,yaw)
-    return theta
+# find expression for goal pose in robot's base frame
+def calculate_goal_pose(tag_pose):
+    global goal_pose
+    T_CB = np.array([[1,0,0,0.07],
+                    [0,-1,0,0],
+                    [0,0,-1,0.2],
+                    [0,0,0,1]])
+    T_AC = make_transformation_matrix(tag_pose)
+    T_GA = np.array([[0,-1,0,0],
+                    [0,0,1,0],
+                    [-1,0,0,0.12],
+                    [0,0,0,1]])
+    goal_pose = T_GA @ T_AC @ T_CB
 
-# create a homogenous affine matrix from a pose's components
-def make_affine(theta=None,x=None,y=None):
-    return np.array([[cos(theta), -sin(theta), x], [sin(theta), cos(theta), y], [0,0,1]])
+
+# create a homogenous affine matrix from a pose
+def make_transformation_matrix(pose):
+    # use the quaternion to construct the rotation part
+    q0 = pose.orientation.w
+    q1 = pose.orientation.x
+    q2 = pose.orientation.y
+    q3 = pose.orientation.z
+    
+    return np.array([[2*(q0*q0+q1*q1)-1,2*(q1*q2-q0*q3),2*(q1*q3+q0*q2),pose.position.x],
+                    [2*(q1*q2+q0*q3),2*(q0*q0+q2*q2)-1,2*(q2*q3-q0*q1),pose.position.y],
+                    [2*(q1*q3-q0*q2),2*(q2*q3+q0*q1),2*(q0*q0+q3*q3)-1,pose.position.z],
+                    [0,0,0,1]])
+                            
 
 # calculate a trajectory to drive to the goal pose
 def calculate_trajectory(cur_pose,goal_pose, T):
     # calculate \dot\Omega using inverse kinematics
-    # dotOmega = (1/T)*logm(inv(cur_pose) @ goal_pose)
     dotOmega = (1/T)*logm(np.matmul(inv(cur_pose),goal_pose))
     print("dotOmega:\n",dotOmega)
     # extract necessary speed commands
@@ -62,10 +67,10 @@ def calculate_trajectory(cur_pose,goal_pose, T):
     control_pub.publish(cmd)
 
 # drive to the goal pose for a certain amount of time, then halt
-def go_to_goal(goal_pose, T):
+def go_to_goal(T):
     # starting pose is origin but offset from camera's frame slightly
     # NOTE I couldn't find a spec for this but it seems to be about +7cm on x
-    cur_pose = make_affine(theta=0,x=-0.07,y=0)
+    cur_pose = np.eye(4)
     print("initial pose:\n",cur_pose)
     print("goal pose:\n",goal_pose)
     start_time = time()
