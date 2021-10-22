@@ -17,6 +17,9 @@ w = 0.16 # chassis width (m)
 # Poses as homogenous matrices:
 cur_pose = np.array([[1,0,0],[0,1,0],[0,0,1]])
 goal_pose = None
+# Transformation parameters:
+tag_to_goal = 0.12 # distance to goal pose from apriltag when projected to x-y-plane
+base_to_cam = 0.07 # distance between origin of base and camera frames when projected to x-y-plane
 
 # get a pose from the detected tag
 def tag_detect(tag_msg):
@@ -32,11 +35,11 @@ def tag_detect(tag_msg):
         #  - robot x-axis directly facing it (anti-parallel with its z-axis)
         # transform to robot's coordinate frame
         #  - tag's z position corresponds to distance between them (robot x)
-        goal_pose = make_affine(theta=0,x=tag_pose.position.z-0.12,y=0)
+        goal_pose = make_affine(theta=acos(tag_pose.orientation.w),x=tag_pose.position.z-0.12,y=0)
         print(goal_pose)
 
         # now that we have the goal pose, go to it
-        go_to_goal(goal_pose,15)
+        go_to_goal(goal_pose,5)
     except:
         # tag not detected
         return
