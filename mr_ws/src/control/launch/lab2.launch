@@ -1,0 +1,10 @@
+<launch>
+  <!-- lab2 gazebo launch files -->
+  <group>
+    <include file="$(find turtlebot3_mr)/launch/turtlebot3_lab2.launch" />
+    <include file="$(find turtlebot3_mr)/launch/apriltag_gazebo.launch" />
+  </group>
+
+  <!-- robot control node -->
+  <node pkg="control" type="control_node.py" name="control_node" output="screen" />
+</launch>
