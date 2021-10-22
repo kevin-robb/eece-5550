@@ -4,3 +4,6 @@
 [submodule "mr_ws/src/turtlebot3_mr"]
 	path = mr_ws/src/turtlebot3_mr
 	url = https://github.com/tkelestemur/turtlebot3_mr.git
+[submodule "mr_ws/src/mobile_robotics"]
+	path = mr_ws/src/mobile_robotics
+	url = git@github.com:kevin-robb/mobile_robotics.git
