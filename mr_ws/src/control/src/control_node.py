@@ -43,6 +43,8 @@ def tag_detect(tag_msg):
                         [r[1][0],r[1][1],r[1][2],t[1]],
                         [r[2][0],r[2][1],r[2][2],t[2]],
                         [0,0,0,1]])
+        # invert to get tf we want
+        T_AC = inv(T_AC)
     except:
         # tag not detected
         return
@@ -51,7 +53,7 @@ def tag_detect(tag_msg):
 def calculate_trajectory(goal_pose, T):
     # calculate \dot\Omega using inverse kinematics
     # because cur_pose=I, inv(cur_pose)@goal_pose = goal_pose
-    dotOmega = (1/T) * logm(goal_pose)
+    dotOmega = (1/T) * logm(inv(goal_pose))
     # extract necessary speed commands
     cmd = Twist()
     cmd.linear.x = dotOmega[0][2]
