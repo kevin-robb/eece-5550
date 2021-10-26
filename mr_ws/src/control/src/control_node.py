@@ -5,11 +5,10 @@ from geometry_msgs.msg import Twist
 from apriltag_ros.msg import AprilTagDetectionArray
 import numpy as np
 from scipy.linalg import logm, inv
-from math import sin, cos, acos, asin, atan2
 from time import sleep
 # from tf import TransformListener, lookupTransform
 import tf
-from scipy.spatial.transform import Rotation as R, rotation
+from scipy.spatial.transform import Rotation as R
 
 control_pub = None
 tf_listener = None
@@ -22,10 +21,9 @@ T_AC = None # cam->tag
 T_GA = None # tag->goal
 # Poses as homogenous matrices:
 cur_pose = np.array([[1,0,0],[0,1,0],[0,0,1]])
-goal_pose = None
-# Transformation parameters:
-tag_to_goal = 0.12 # distance to goal pose from apriltag when projected to x-y-plane
-base_to_cam = 0.07 # distance between origin of base and camera frames when projected to x-y-plane
+# goal_pose = None
+# flags
+done = False
 
 # get the cam->tag transform
 def tag_detect(tag_msg):
@@ -39,11 +37,11 @@ def tag_detect(tag_msg):
         t = [tag_pose.position.x,tag_pose.position.y,tag_pose.position.z]
         q = [tag_pose.orientation.w, tag_pose.orientation.x, tag_pose.orientation.y, tag_pose.orientation.z]
         # make it into an affine matrix
-        r = R.from_quat(q)
+        r = R.from_quat(q).as_matrix()
         # make affine matrix for transformation
         T_AC = np.array([[r[0][0],r[0][1],r[0][2],t[0]],
-                        [r[1][0],r[1][1],r[1][2],t[1]]
-                        [r[2][0],r[2][1],r[2][2],t[2]]
+                        [r[1][0],r[1][1],r[1][2],t[1]],
+                        [r[2][0],r[2][1],r[2][2],t[2]],
                         [0,0,0,1]])
     except:
         # tag not detected
@@ -52,7 +50,8 @@ def tag_detect(tag_msg):
 # calculate a trajectory to drive to the goal pose
 def calculate_trajectory(goal_pose, T):
     # calculate \dot\Omega using inverse kinematics
-    dotOmega = logm(inv(cur_pose) @ goal_pose) / T
+    # because cur_pose=I, inv(cur_pose)@goal_pose = goal_pose
+    dotOmega = (1/T) * logm(goal_pose)
     # extract necessary speed commands
     cmd = Twist()
     cmd.linear.x = dotOmega[0][2]
@@ -70,47 +69,61 @@ def go_to_goal(goal_pose, T):
 def get_T_CB():
     global T_CB
     # make sure the listener has time to initialize
-    sleep(0.2)
+    sleep(2.5)
     # get cam relative to base from the service
     (t,q) = tf_listener.lookupTransform('/base_footprint', '/camera_rgb_optical_frame', rospy.Time(0))
     # get equiv rotation matrix from quaternion
-    r = R.from_quat(q)
+    r = R.from_quat(q).as_matrix()
     # make affine matrix for transformation base->cam
     T_CB = np.array([[r[0][0],r[0][1],r[0][2],t[0]],
-                    [r[1][0],r[1][1],r[1][2],t[1]]
-                    [r[2][0],r[2][1],r[2][2],t[2]]
+                    [r[1][0],r[1][1],r[1][2],t[1]],
+                    [r[2][0],r[2][1],r[2][2],t[2]],
                     [0,0,0,1]])
 def get_T_GA():
     global T_GA
     # we know the goal pose is 0.12 m away along z_tag,
-    # and z_tag anti-parallel to x_goal,
-    #     y_tag is anti-parallel to z_goal,
-    #     x_tag is parallel to y_goal.
+    # and z_tag -> -x_goal,
+    #     y_tag -> z_goal,
+    #     x_tag -> -y_goal.
     # we can represent this as first a translation, and then a rotation
-    T_translation = np.array([[0,0,0,0],
-                              [0,0,0,0]
-                              [0,0,0,0.12]
+    T_translation = np.array([[1,0,0,0],
+                              [0,1,0,0],
+                              [0,0,1,0.12],
                               [0,0,0,1]])
     T_rotation = np.array([[0,0,-1,0],
-                           [1,0,0,0]
-                           [0,-1,0,0]
+                           [-1,0,0,0],
+                           [0,1,0,0],
                            [0,0,0,1]])
     T_GA = np.matmul(T_rotation, T_translation)
 
 def timer_callback(event):
-    if T_GA is None:
-        get_T_GA()
-    elif T_CB is None:
-        get_T_CB()
-    elif T_AC is not None:
+    global done
+    if done: return
+    if T_CB is not None and T_AC is not None and T_GA is not None:
+        done = True
         # all three transforms have been set
-        go_to_pose() #TODO
+        g = np.matmul(np.matmul(T_GA,T_AC),T_CB)
+        # strip out z parts to make it in SE(2) instead of SE(3)
+        goal_pose = np.array([[g[0][0],g[0][1],g[0][3]],
+                             [g[1][0],g[1][1],g[1][3]],
+                             [0,0,1]])
+        print_stuff(goal_pose)
+        go_to_goal(goal_pose,5)
+
+def print_stuff(goal_pose):
+    print("T_CB:\n",T_CB)
+    print("T_AC:\n",T_AC)
+    print("T_GA:\n",T_GA)
+    print("goal_pose:\n",goal_pose)
 
 def main():
     global control_pub, tf_listener
     rospy.init_node('control_node')
     # get the TF from the service
     tf_listener = tf.TransformListener()
+    # set static transforms
+    get_T_CB()
+    get_T_GA()
     # publish the command messages
     control_pub = rospy.Publisher("/cmd_vel", Twist, queue_size=1)
     # subscribers
