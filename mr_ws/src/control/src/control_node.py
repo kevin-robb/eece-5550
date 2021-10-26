@@ -7,11 +7,19 @@ import numpy as np
 from scipy.linalg import logm, inv
 from math import sin, cos, acos, asin, atan2
 from time import sleep
+# from tf import TransformListener, lookupTransform
+import tf
+from scipy.spatial.transform import Rotation as R, rotation
 
 control_pub = None
+tf_listener = None
 # Constants:
 r = 0.033 # wheel radius (m)
 w = 0.16 # chassis width (m)
+# Transforms as homogenous matrices
+T_CB = None # base->cam
+T_AC = None # cam->tag
+T_GA = None # tag->goal
 # Poses as homogenous matrices:
 cur_pose = np.array([[1,0,0],[0,1,0],[0,0,1]])
 goal_pose = None
@@ -19,25 +27,24 @@ goal_pose = None
 tag_to_goal = 0.12 # distance to goal pose from apriltag when projected to x-y-plane
 base_to_cam = 0.07 # distance between origin of base and camera frames when projected to x-y-plane
 
-# get a pose from the detected tag
+# get the cam->tag transform
 def tag_detect(tag_msg):
-    global goal_pose
-    if goal_pose is not None:
+    global T_AC
+    if T_AC is not None:
         # only get it once
         return
     try:
         tag_pose = tag_msg.detections[0].pose.pose.pose
         # use this to make goal pose in robot base frame
-        q0 = tag_pose.orientation.w
-        q1 = tag_pose.orientation.x
-        q2 = tag_pose.orientation.y
-        q3 = tag_pose.orientation.z
-        theta = -asin(2*(q0*q2-q3*q1)) # equivalent of yaw in robot base frame
-        goal_pose = np.array([[cos(theta), -sin(theta), tag_pose.position.z-tag_to_goal+base_to_cam], [sin(theta), cos(theta), tag_pose.position.y], [0,0,1]])
-        print(goal_pose)
-
-        # now that we have the goal pose, go to it
-        go_to_goal(goal_pose,5)
+        t = [tag_pose.position.x,tag_pose.position.y,tag_pose.position.z]
+        q = [tag_pose.orientation.w, tag_pose.orientation.x, tag_pose.orientation.y, tag_pose.orientation.z]
+        # make it into an affine matrix
+        r = R.from_quat(q)
+        # make affine matrix for transformation
+        T_AC = np.array([[r[0][0],r[0][1],r[0][2],t[0]],
+                        [r[1][0],r[1][1],r[1][2],t[1]]
+                        [r[2][0],r[2][1],r[2][2],t[2]]
+                        [0,0,0,1]])
     except:
         # tag not detected
         return
@@ -60,14 +67,56 @@ def go_to_goal(goal_pose, T):
     cmd = Twist() # send blank command of zeros
     control_pub.publish(cmd)
 
+def get_T_CB():
+    global T_CB
+    # make sure the listener has time to initialize
+    sleep(0.2)
+    # get cam relative to base from the service
+    (t,q) = tf_listener.lookupTransform('/base_footprint', '/camera_rgb_optical_frame', rospy.Time(0))
+    # get equiv rotation matrix from quaternion
+    r = R.from_quat(q)
+    # make affine matrix for transformation base->cam
+    T_CB = np.array([[r[0][0],r[0][1],r[0][2],t[0]],
+                    [r[1][0],r[1][1],r[1][2],t[1]]
+                    [r[2][0],r[2][1],r[2][2],t[2]]
+                    [0,0,0,1]])
+def get_T_GA():
+    global T_GA
+    # we know the goal pose is 0.12 m away along z_tag,
+    # and z_tag anti-parallel to x_goal,
+    #     y_tag is anti-parallel to z_goal,
+    #     x_tag is parallel to y_goal.
+    # we can represent this as first a translation, and then a rotation
+    T_translation = np.array([[0,0,0,0],
+                              [0,0,0,0]
+                              [0,0,0,0.12]
+                              [0,0,0,1]])
+    T_rotation = np.array([[0,0,-1,0],
+                           [1,0,0,0]
+                           [0,-1,0,0]
+                           [0,0,0,1]])
+    T_GA = np.matmul(T_rotation, T_translation)
+
+def timer_callback(event):
+    if T_GA is None:
+        get_T_GA()
+    elif T_CB is None:
+        get_T_CB()
+    elif T_AC is not None:
+        # all three transforms have been set
+        go_to_pose() #TODO
 
 def main():
-    global control_pub
+    global control_pub, tf_listener
     rospy.init_node('control_node')
+    # get the TF from the service
+    tf_listener = tf.TransformListener()
     # publish the command messages
     control_pub = rospy.Publisher("/cmd_vel", Twist, queue_size=1)
     # subscribers
     rospy.Subscriber("/tag_detections",AprilTagDetectionArray,tag_detect,queue_size=1)
+    # make a 10Hz timer
+    rospy.Timer(rospy.Duration(0.1), timer_callback)
     # pump callbacks
     rospy.spin()
 
