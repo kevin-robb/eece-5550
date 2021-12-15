@@ -1,10 +1,3 @@
-"""
-
-Particle Filter localization sample
-
-author: Atsushi Sakai (@Atsushi_twi)
-
-"""
 
 import math
 import keyboard
@@ -30,12 +23,10 @@ NTh = NP / 2.0  # Number of particle for re-sampling
 
 show_animation = True
 
-
 def calc_input():
     # Original static command to drive in circle
     # v = 1.0  # [m/s]
     # yaw_rate = 0.1  # [rad/s]
-
     v, yaw_rate = 0, 0
     # Get command from keyboard input
     if keyboard.is_pressed("w"):
